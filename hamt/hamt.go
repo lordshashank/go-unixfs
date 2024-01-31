@@ -9,8 +9,10 @@
 // wikipedia article is the collapsing of empty shards.
 // Given the following tree: ( '[' = shards, '{' = values )
 // [ 'A' ] -> [ 'B' ] -> { "ABC" }
-//    |       L-> { "ABD" }
-//    L-> { "ASDF" }
+//
+//	|       L-> { "ABD" }
+//	L-> { "ASDF" }
+//
 // If we simply removed "ABC", we would end up with a tree where shard 'B' only
 // has a single child.  This causes two issues, the first, is that now we have
 // an extra lookup required to get to "ABD".  The second issue is that now we
@@ -100,11 +102,15 @@ func makeShard(ds ipld.DAGService, size int) (*Shard, error) {
 		return nil, err
 	}
 	maxpadding := fmt.Sprintf("%X", size-1)
+	childer, err := newChilder(ds, size)
+	if err != nil {
+		return nil, err
+	}
 	s := &Shard{
 		tableSizeLg2: lg2s,
 		prefixPadStr: fmt.Sprintf("%%0%dX", len(maxpadding)),
 		maxpadlen:    len(maxpadding),
-		childer:      newChilder(ds, size),
+		childer:      childer,
 		tableSize:    size,
 		dserv:        ds,
 	}
@@ -113,6 +119,26 @@ func makeShard(ds ipld.DAGService, size int) (*Shard, error) {
 
 	return s, nil
 }
+
+// func makeShard(ds ipld.DAGService, size int) (*Shard, error) {
+// 	lg2s, err := Logtwo(size)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	maxpadding := fmt.Sprintf("%X", size-1)
+// 	s := &Shard{
+// 		tableSizeLg2: lg2s,
+// 		prefixPadStr: fmt.Sprintf("%%0%dX", len(maxpadding)),
+// 		maxpadlen:    len(maxpadding),
+// 		childer:      newChilder(ds, size),
+// 		tableSize:    size,
+// 		dserv:        ds,
+// 	}
+
+// 	s.childer.sd = s
+
+// 	return s, nil
+// }
 
 // NewHamtFromDag creates new a HAMT shard from the given DAG.
 func NewHamtFromDag(dserv ipld.DAGService, nd ipld.Node) (*Shard, error) {
@@ -735,12 +761,24 @@ type childer struct {
 	children []*Shard
 }
 
-func newChilder(ds ipld.DAGService, size int) *childer {
+func newChilder(ds ipld.DAGService, size int) (*childer, error) {
+	bitfield, err := bitfield.NewBitfield(size)
+	if err != nil {
+		return nil, err
+	}
 	return &childer{
 		dserv:    ds,
-		bitfield: bitfield.NewBitfield(size),
-	}
+		bitfield: bitfield,
+	}, nil
 }
+
+// func newChilder(ds ipld.DAGService, size int) *childer {
+// 	return &childer{
+// 		dserv:    ds,
+// 		bitfield: bitfield.NewBitfield(size),
+// 	}
+// }
+
 
 func (s *childer) makeChilder(data []byte, links []*ipld.Link) *childer {
 	s.children = make([]*Shard, len(links))
